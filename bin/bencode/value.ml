@@ -6,12 +6,22 @@ type t =
   | List of t list
   | Dict of t StringMap.t
 
-let dict_bindings = function
-  | Dict m -> StringMap.bindings m
-  | _ -> raise (Invalid_argument "not a dict")
+let get_int = function
+  | Int i -> i
+  | _ -> raise (Invalid_argument "not an int")
 ;;
 
-let bytestring_bytes = function
+let get_bytestring = function
   | Bytestring b -> b
   | _ -> raise (Invalid_argument "not a bytestring")
+;;
+
+let get_list = function
+  | List l -> l
+  | _ -> raise (Invalid_argument "not a list")
+;;
+
+let get_dict = function
+  | Dict m -> m
+  | _ -> raise (Invalid_argument "not a dict")
 ;;

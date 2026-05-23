@@ -58,7 +58,7 @@ and parse_dict bs =
   let parse_key_value bs =
     let* k, bs = parse_bytestring bs in
     let* v, bs = parse_value bs in
-    Some (Bytes.to_string (Value.bytestring_bytes k), v, bs)
+    Some (Bytes.to_string (Value.get_bytestring k), v, bs)
   in
   let rec parse_many_key_value kvs bs =
     match parse_key_value bs with
