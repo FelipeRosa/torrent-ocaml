@@ -21,8 +21,9 @@ module Parse = struct
     let cat_c = Bytes.cat
 
     let consume_n n src =
-      if src.ptr + n < Bytes.length src.bs
-      then Some (Bytes.sub src.bs src.ptr n, { src with ptr = src.ptr + n })
+      let next_ptr = src.ptr + n in
+      if next_ptr <= Bytes.length src.bs
+      then Some (Bytes.sub src.bs src.ptr n, { src with ptr = next_ptr })
       else None
     ;;
   end
@@ -76,7 +77,7 @@ module Parse = struct
     let rec loop i acc current_src =
       if i < n
       then (
-        match parser_fn src with
+        match parser_fn current_src with
         | Some (consumed, updated_src) -> loop (i + 1) (S.cat_c acc consumed) updated_src
         | None -> None)
       else Some (acc, current_src)
@@ -115,11 +116,26 @@ module Parse = struct
   ;;
 end
 
-type value =
-  | Int of int64
-  | Bytestring of bytes
-  | List of value list
-  | Dict of (string, value) Hashtbl.t
+module ByteSource = Parse.ByteSource
+module StringMap = Map.Make (String)
+
+module Value = struct
+  type t =
+    | Int of int64
+    | Bytestring of bytes
+    | List of t list
+    | Dict of t StringMap.t
+
+  let dict_bindings = function
+    | Dict m -> StringMap.bindings m
+    | _ -> raise (Invalid_argument "not a dict")
+  ;;
+
+  let bytestring_bytes = function
+    | Bytestring b -> b
+    | _ -> raise (Invalid_argument "not a bytestring")
+  ;;
+end
 
 let parse_int bs =
   let open Parse in
@@ -129,7 +145,7 @@ let parse_int bs =
   let* digits, bs = parse_digits bs in
   let* _, bs = parse_byte 'e' bs in
   let* parsed_int = Int64.of_string_opt (Bytes.to_string digits) in
-  Some (parsed_int, bs)
+  Some (Value.Int parsed_int, bs)
 ;;
 
 let parse_bytestring bs =
@@ -145,5 +161,48 @@ let parse_bytestring bs =
       (parse_one (module ByteSource) (Fun.const true))
       bs
   in
-  Some (Bytestring bytestring, bs)
+  Some (Value.Bytestring bytestring, bs)
+;;
+
+let rec parse_value bs =
+  let parsers = [ parse_int; parse_bytestring; parse_list; parse_dict ] in
+  let rec loop = function
+    | [] -> None
+    | p :: ps ->
+      (match p bs with
+       | None -> loop ps
+       | Some res -> Some res)
+  in
+  loop parsers
+
+and parse_list bs =
+  let rec parse_many_values values bs =
+    match parse_value bs with
+    | None -> Some (values, bs)
+    | Some (value, next_bs) -> parse_many_values (values @ [ value ]) next_bs
+  in
+  let open Parse in
+  let ( let* ) = Option.bind in
+  let* _, bs = parse_byte 'l' bs in
+  let* values, bs = parse_many_values [] bs in
+  let* _, bs = parse_byte 'e' bs in
+  Some (Value.List values, bs)
+
+and parse_dict bs =
+  let ( let* ) = Option.bind in
+  let parse_key_value bs =
+    let* k, bs = parse_bytestring bs in
+    let* v, bs = parse_value bs in
+    Some (Bytes.to_string (Value.bytestring_bytes k), v, bs)
+  in
+  let rec parse_many_key_value kvs bs =
+    match parse_key_value bs with
+    | None -> Some (kvs, bs)
+    | Some (k, v, bs) -> parse_many_key_value (StringMap.add k v kvs) bs
+  in
+  let open Parse in
+  let* _, bs = parse_byte 'd' bs in
+  let* m, bs = parse_many_key_value StringMap.empty bs in
+  let* _, bs = parse_byte 'e' bs in
+  Some (Value.Dict m, bs)
 ;;
