@@ -1,0 +1,11 @@
+(executable
+ (public_name torrent-ocaml)
+ (name main)
+ (modules main)
+ (libraries bencode))
+
+(library
+ (name bencode)
+ (modules bencode)
+ (inline_tests)
+ (preprocess (pps ppx_inline_test)))
