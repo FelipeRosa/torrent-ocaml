@@ -4,8 +4,3 @@
  (modules main)
  (libraries bencode))
 
-(library
- (name bencode)
- (modules bencode)
- (inline_tests)
- (preprocess (pps ppx_inline_test)))
