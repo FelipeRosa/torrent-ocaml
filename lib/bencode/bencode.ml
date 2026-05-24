@@ -76,3 +76,33 @@ let%test "parse_value bytestring" =
   | Some (v, _) -> Value.get_bytestring v = Bytes.of_string "abc"
   | _ -> false
 ;;
+
+let%test "parse_value list" =
+  let bs = Parsing.ByteSource.of_string "li1ei2e3:abce" in
+  let verify_list l =
+    let* e0 = List.nth_opt l 0 in
+    let* e1 = List.nth_opt l 1 in
+    let* e2 = List.nth_opt l 2 in
+    Some
+      (Value.get_int e0 = Int64.of_int 1
+       && Value.get_int e1 = Int64.of_int 2
+       && Bytes.equal (Value.get_bytestring e2) (Bytes.of_string "abc"))
+  in
+  match parse_value bs with
+  | Some (l, _) -> verify_list (Value.get_list l) = Some true
+  | _ -> false
+;;
+
+let%test "parse_value dict" =
+  let bs = Parsing.ByteSource.of_string "d1:ai1e1:b3:defe" in
+  let verify_dict d =
+    let* e0 = Value.StringMap.find_opt "a" d in
+    let* e1 = Value.StringMap.find_opt "b" d in
+    Some
+      (Value.get_int e0 = Int64.one
+       && Bytes.equal (Value.get_bytestring e1) (Bytes.of_string "def"))
+  in
+  match parse_value bs with
+  | Some (d, _) -> verify_dict (Value.get_dict d) = Some true
+  | _ -> false
+;;
