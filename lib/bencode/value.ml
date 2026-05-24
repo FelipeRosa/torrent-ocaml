@@ -1,10 +1,16 @@
-module Dict = Map.Make (String)
+module StringMap = Map.Make (String)
 
 type t =
   | Int of int64
   | Bytestring of bytes
   | List of t list
-  | Dict of t Dict.t
+  | Dict of t StringMap.t
+
+let of_int i = Int i
+let of_bytes b = Bytestring b
+let of_string s = Bytestring (String.to_bytes s)
+let of_list l = List l
+let of_string_map m = Dict m
 
 let get_int = function
   | Int i -> i
