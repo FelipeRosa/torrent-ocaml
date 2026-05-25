@@ -10,20 +10,29 @@ module ByteSource = struct
     if bs.ptr < Bytes.length bs.buf then Some (Bytes.get bs.buf bs.ptr) else None
   ;;
 
+  let consume_one bs =
+    if bs.ptr < Bytes.length bs.buf
+    then Bytes.sub bs.buf bs.ptr 1, { bs with ptr = bs.ptr + 1 }
+    else raise (Invalid_argument "source already fully consumed")
+  ;;
+
   let advance n bs =
     let end_ptr = bs.ptr + n in
     if end_ptr <= Bytes.length bs.buf
     then { bs with ptr = bs.ptr + n }
-    else raise (Invalid_argument "source already fully consumed")
+    else raise (Invalid_argument "source already fully advanced")
   ;;
 
   (* TESTS *)
   let%test "peek success" = of_string "abc" |> peek |> Option.equal ( = ) (Some 'a')
   let%test "peek fail" = of_string "" |> peek |> Option.is_none
 
-  let%test "advance" =
-    of_string "abc" |> advance 1 |> peek |> Option.equal ( = ) (Some 'b')
+  let%test "consume_one" =
+    let bs = of_string "abc" in
+    bs |> consume_one |> ( = ) (Bytes.of_string "a", { bs with ptr = 1 })
   ;;
+
+  let%test "advance" = of_string "abc" |> advance 1 |> peek |> ( = ) (Some 'b')
 end
 
 type 'a parser_fn = ByteSource.t -> ('a * ByteSource.t) option
@@ -35,29 +44,47 @@ let parse_one pred bs =
   if pred b then Some (b, ByteSource.advance 1 bs) else None
 ;;
 
-let parse_many pf bs =
-  let rec loop acc cur_bs =
-    match pf cur_bs with
-    | None -> acc, cur_bs
-    | Some (accepted, updated_bs) -> loop (acc @ [ accepted ]) updated_bs
-  in
-  match loop [] bs with
-  | [], _ -> None
-  | res -> Some res
+let parse_bytes_one pred bs =
+  let* b = ByteSource.peek bs in
+  if pred b then Some (ByteSource.consume_one bs) else None
 ;;
 
-let parse_exact n pf bs =
+let parse_many_gen
+      (type a)
+      (type b)
+      (empty : b)
+      (cat_fn : a -> b -> b)
+      (pf : a parser_fn)
+      bs
+  =
+  let rec loop acc cur_bs ok =
+    match pf cur_bs with
+    | None -> acc, cur_bs, ok
+    | Some (accepted, updated_bs) -> loop (cat_fn accepted acc) updated_bs true
+  in
+  match loop empty bs false with
+  | acc, updated_bs, true -> Some (acc, updated_bs)
+  | _, _, _ -> None
+;;
+
+let parse_many pf bs = parse_many_gen [] (fun a acc -> acc @ [ a ]) pf bs
+let parse_bytes_many pf bs = parse_many_gen Bytes.empty (Fun.flip Bytes.cat) pf bs
+
+let parse_exact_gen empty cat_fn n pf bs =
   let rec loop i acc cur_bs =
     if i = n
     then Some (acc, cur_bs)
     else (
       let cont_loop_fn (accepted, updated_bs) =
-        loop (i + 1) (acc @ [ accepted ]) updated_bs
+        loop (i + 1) (cat_fn accepted acc) updated_bs
       in
       Option.bind (pf cur_bs) cont_loop_fn)
   in
-  loop 0 [] bs
+  loop 0 empty bs
 ;;
+
+let parse_exact n pf bs = parse_exact_gen [] (fun a acc -> acc @ [ a ]) n pf bs
+let parse_bytes_exact n pf bs = parse_exact_gen Bytes.empty (Fun.flip Bytes.cat) n pf bs
 
 let optional pf bs =
   match pf bs with
@@ -70,8 +97,8 @@ let parse_char c bs =
   parse_one (( = ) c) bs |> Option.map ignore_accepted
 ;;
 
-let parse_alpha = parse_one Char.Ascii.is_letter
 let parse_digit = parse_one Char.Ascii.is_digit
+let parse_bytes_digit = parse_bytes_one Char.Ascii.is_digit
 
 (* TESTS *)
 let%test "parse_one match" =
@@ -90,22 +117,22 @@ let%test "parse_one no match" =
 ;;
 
 let%test "parse_many success" =
-  let bs = ByteSource.of_string "abc123" in
-  match parse_many parse_alpha bs with
-  | Some (cs, updated_bs) -> cs = [ 'a'; 'b'; 'c' ] && updated_bs = { bs with ptr = 3 }
+  let bs = ByteSource.of_string "123abc" in
+  match parse_many parse_digit bs with
+  | Some (cs, updated_bs) -> cs = [ '1'; '2'; '3' ] && updated_bs = { bs with ptr = 3 }
   | None -> false
 ;;
 
 let%test "parse_many end of source" =
-  let bs = ByteSource.of_string "abc" in
-  match parse_many parse_alpha bs with
-  | Some (cs, updated_bs) -> cs = [ 'a'; 'b'; 'c' ] && updated_bs = { bs with ptr = 3 }
+  let bs = ByteSource.of_string "123" in
+  match parse_many parse_digit bs with
+  | Some (cs, updated_bs) -> cs = [ '1'; '2'; '3' ] && updated_bs = { bs with ptr = 3 }
   | None -> false
 ;;
 
 let%test "parse_many failure" =
   let bs = ByteSource.of_string "123" in
-  parse_many parse_alpha bs |> Option.is_none
+  parse_many (parse_one (Fun.const false)) bs |> Option.is_none
 ;;
 
 let%test "optional match" =
@@ -133,13 +160,13 @@ let%test "optional no match" =
 ;;
 
 let%test "parse_exact success" =
-  let bs = ByteSource.of_string "abcd" in
-  match parse_exact 2 parse_alpha bs with
-  | Some ([ 'a'; 'b' ], updated_bs) -> updated_bs = { bs with ptr = 2 }
+  let bs = ByteSource.of_string "1234" in
+  match parse_exact 2 parse_digit bs with
+  | Some ([ '1'; '2' ], updated_bs) -> updated_bs = { bs with ptr = 2 }
   | _ -> false
 ;;
 
 let%test "parse_exact failure" =
-  let bs = ByteSource.of_string "abcd" in
-  parse_exact 5 parse_alpha bs |> Option.is_none
+  let bs = ByteSource.of_string "1234" in
+  parse_exact 5 parse_digit bs |> Option.is_none
 ;;

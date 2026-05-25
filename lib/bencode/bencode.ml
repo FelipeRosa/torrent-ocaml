@@ -7,28 +7,23 @@ let parse_int bs =
   let open Parsing in
   let* _, bs' = parse_char 'i' bs in
   let* minus_sign, bs' = optional (parse_char '-') bs' in
-  let* digits, bs' = parse_many parse_digit bs' in
+  let* digits, bs' = parse_bytes_many parse_bytes_digit bs' in
   let* _, bs' = parse_char 'e' bs' in
-  let* int_v =
-    (if Option.is_some minus_sign then '-' :: digits else digits)
-    |> List.to_seq
-    |> String.of_seq
-    |> Int64.of_string_opt
-  in
-  Some (Value.of_int int_v, bs')
+  let* int_v = digits |> String.of_bytes |> Int64.of_string_opt in
+  Some (Value.of_int (if Option.is_some minus_sign then Int64.neg int_v else int_v), bs')
 ;;
 
 let parse_bytestring bs =
   let open Parsing in
-  let* len_digits, bs' = parse_many parse_digit bs in
+  let* len_digits, bs' = parse_bytes_many parse_bytes_digit bs in
   let* _, bs' = parse_char ':' bs' in
   let* bytestring, bs' =
-    parse_exact
-      (len_digits |> List.to_seq |> String.of_seq |> int_of_string)
-      (parse_one (Fun.const true))
+    parse_bytes_exact
+      (len_digits |> String.of_bytes |> int_of_string)
+      (parse_bytes_one (Fun.const true))
       bs'
   in
-  Some (List.to_seq bytestring |> Bytes.of_seq |> Value.of_bytes, bs')
+  Some (Value.of_bytes bytestring, bs')
 ;;
 
 let rec parse_value bs =
