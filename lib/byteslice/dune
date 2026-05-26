@@ -1,0 +1,5 @@
+(library
+ (name byteslice)
+ (modules byteslice)
+ (inline_tests)
+ (preprocess (pps ppx_inline_test)))

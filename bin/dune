@@ -2,4 +2,4 @@
  (public_name torrent-ocaml)
  (name main)
  (modules main)
- (libraries bencode))
+ (libraries bencode byteslice))
