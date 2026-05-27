@@ -1,5 +1,6 @@
 module Parsing = Parsing
 module Value = Value
+module BS = Byteslice
 
 let ( let* ) = Option.bind
 
@@ -9,7 +10,7 @@ let parse_int bs =
   let* minus_sign, bs' = optional (parse_char '-') bs' in
   let* digits, bs' = parse_bytes_many parse_bytes_digit bs' in
   let* _, bs' = parse_char 'e' bs' in
-  let* int_v = digits |> String.of_bytes |> Int64.of_string_opt in
+  let* int_v = digits |> BS.to_string |> Int64.of_string_opt in
   Some (Value.of_int (if Option.is_some minus_sign then Int64.neg int_v else int_v), bs')
 ;;
 
@@ -19,11 +20,11 @@ let parse_bytestring bs =
   let* _, bs' = parse_char ':' bs' in
   let* bytestring, bs' =
     parse_bytes_exact
-      (len_digits |> String.of_bytes |> int_of_string)
+      (len_digits |> BS.to_string |> int_of_string)
       (parse_bytes_one (Fun.const true))
       bs'
   in
-  Some (Value.of_bytes bytestring, bs')
+  Some (Value.of_byteslice bytestring, bs')
 ;;
 
 let rec parse_value bs =
@@ -49,7 +50,7 @@ and parse_dict bs =
   let parse_kv bs =
     let* k, bs' = parse_bytestring bs in
     let* v, bs' = parse_value bs' in
-    Some ((String.of_bytes (Value.get_bytestring k), v), bs')
+    Some ((Value.get_bytestring k |> BS.to_string, v), bs')
   in
   let* _, bs' = parse_char 'd' bs in
   let* kvs, bs' = parse_many parse_kv bs' in
@@ -68,7 +69,8 @@ let%test "parse_value int" =
 let%test "parse_value bytestring" =
   let bs = Parsing.ByteSource.of_string "3:abci32e" in
   match parse_value bs with
-  | Some (v, _) -> Value.get_bytestring v = Bytes.of_string "abc"
+  | Some (v, _) ->
+    BS.equal (Value.get_bytestring v) (BS.of_string "abc" 0 3)
   | _ -> false
 ;;
 
@@ -81,7 +83,9 @@ let%test "parse_value list" =
     Some
       (Value.get_int e0 = Int64.of_int 1
        && Value.get_int e1 = Int64.of_int 2
-       && Bytes.equal (Value.get_bytestring e2) (Bytes.of_string "abc"))
+       && BS.equal
+            (Value.get_bytestring e2)
+            (BS.of_string "abc" 0 3))
   in
   match parse_value bs with
   | Some (l, _) -> verify_list (Value.get_list l) = Some true
@@ -95,7 +99,9 @@ let%test "parse_value dict" =
     let* e1 = Value.StringMap.find_opt "b" d in
     Some
       (Value.get_int e0 = Int64.one
-       && Bytes.equal (Value.get_bytestring e1) (Bytes.of_string "def"))
+       && BS.equal
+            (Value.get_bytestring e1)
+            (BS.of_string "def" 0 3))
   in
   match parse_value bs with
   | Some (d, _) -> verify_dict (Value.get_dict d) = Some true

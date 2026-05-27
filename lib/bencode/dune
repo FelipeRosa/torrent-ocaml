@@ -1,5 +1,6 @@
 (library
  (name bencode)
  (modules bencode parsing value)
+ (libraries byteslice)
  (inline_tests)
  (preprocess (pps ppx_inline_test)))

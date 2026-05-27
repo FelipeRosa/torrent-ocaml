@@ -1,14 +1,16 @@
+module BS = Byteslice
 module StringMap = Map.Make (String)
 
 type t =
   | Int of int64
-  | Bytestring of bytes
+  | Bytestring of BS.t
   | List of t list
   | Dict of t StringMap.t
 
 let of_int i = Int i
-let of_bytes b = Bytestring b
-let of_string s = Bytestring (String.to_bytes s)
+let of_byteslice b = Bytestring b
+let of_bytes b = Bytestring (BS.of_bytes b 0 (Bytes.length b))
+let of_string s = Bytestring (BS.of_string s 0 (String.length s))
 let of_list l = List l
 let of_string_map m = Dict m
 
